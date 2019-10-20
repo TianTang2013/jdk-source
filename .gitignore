@@ -1,0 +1,54 @@
+*/target/
+!.mvn/wrapper/maven-wrapper.jar
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+/build/
+/.idea/
+*/.mvn/
+*/.ida/
+*.cmd
+*mwvnw
+
+# idea 生成的一些中间文件
+*.iml
+.idea/
+*/.idea/
+
+# 构建输出文件夹
+target/
+*/target/
+
+# eclipse
+.project
+*/.project
+.classpath
+*/.classpath
+.settings/
+*/.settings/
+
+# mac
+.DS_Store
+*/.DS_Store
+
+# apidoc
+apidoc/

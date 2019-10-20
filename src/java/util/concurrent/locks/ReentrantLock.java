@@ -250,7 +250,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
                  */
                 if (!hasQueuedPredecessors() &&
                     compareAndSetState(0, acquires)) {
-                    // 当前线程成功修改了state字段的值，那么就表示当前线程获取到了，那么就将AQS中锁的拥有者设置为当前线程，然后返回true。
+                    // 当前线程成功修改了state字段的值，那么就表示当前线程获取到了锁，那么就将AQS中锁的拥有者设置为当前线程，然后返回true。
                     setExclusiveOwnerThread(current);
                     return true;
                 }
