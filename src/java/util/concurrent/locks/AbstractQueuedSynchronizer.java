@@ -584,12 +584,12 @@ public abstract class AbstractQueuedSynchronizer
         // 无限循环
         for (;;) {
             Node t = tail;
-            // 如果尾结点为null，说明这是第一次出现多个线程同时争抢锁，因此队列没有被初始化，tail和head此时均为null
+            // 如果尾结点为null，说明这是第一次出现多个线程同时争抢锁，因此同步队列没有被初始化，tail和head此时均为null
             if (t == null) { // Must initialize
                 // 设置head节点，注意此时是new了一个Node节点，节点的next,prev,thread属性均为null
                 // 这是因为对于头结点而言，作为队列的头部，它的next指向本来就应该是null
                 // 而头结点的thread属性为空，这是AQS同步器特意为之的
-                // 头结点的prev属性此时为空，当时当进行第二次for循环的时候，tail结点就不为空了，因此不会进入到if语句中，而是进入到else语句中，在这里对头结点的prev进行了赋值
+                // 头结点的prev属性此时为空，当进行第二次for循环的时候，tail结点就不为空了，因此不会进入到if语句中，而是进入到else语句中，在这里对头结点的prev进行了赋值
                 if (compareAndSetHead(new Node()))
                     // 第一次初始化队列时，头结点和尾结点是同一个结点
                     tail = head;
@@ -603,8 +603,6 @@ public abstract class AbstractQueuedSynchronizer
                     // 然后修改队列中倒数第二个节点的next指针，使其指向队尾结点
                     t.next = node;
                     // 然后返回的是队列中倒数第二个节点（也就是旧队列中的尾结点）
-                    // 为什么会返回队列中的倒数第二个节点呢？
-                    // 这又是AQS特意设计的，具体原因就是让队列中的第二个节点的线程争抢锁
                     return t;
                 }
             }
@@ -633,7 +631,7 @@ public abstract class AbstractQueuedSynchronizer
                 return node;
             }
         }
-        // 如果队尾为null或者CAS设置队尾失败，就调用enq()方法将当前线程代表的节点接入到队列当中
+        // 如果队尾为null或者CAS设置队尾失败，就调用enq()方法将当前线程代表的节点加入到同步队列当中
         enq(node);
         // 将当前线程代表的节点返回
         return node;
@@ -676,6 +674,12 @@ public abstract class AbstractQueuedSynchronizer
         Node s = node.next;
         if (s == null || s.waitStatus > 0) {
             s = null;
+            /**
+             * 同步队列中的节点锁代表的线程，可能被取消了，此时这个节点的waitStatus=1
+             * 因此这个时候利用for循环从同步队列尾部开始向前遍历，判断节点是不是被取消了
+             * 正常情况下，当头结点释放锁以后，应该唤醒同步队列中的第二个节点，但是如果第二个节点的线程被取消了，此时就不能唤醒它了,
+             * 就应该判断第三个节点，如果第三个节点也被取消了，再依次往后判断，直到第一次出现没有被取消的节点。如果都被取消了，此时s==null，所以不会唤醒任何线程
+             */
             for (Node t = tail; t != null && t != node; t = t.prev)
                 if (t.waitStatus <= 0)
                     s = t;
@@ -890,7 +894,7 @@ public abstract class AbstractQueuedSynchronizer
             boolean interrupted = false;
             // 无限for循环
             for (;;) {
-                // 获取当前线程锁代表节点的前一个节点
+                // 获取当前线程所代表节点的前一个节点
                 final Node p = node.predecessor();
                 // 如果前一个节点是头结点（即当前线程是队列中的第二个节点），那么就调用tryAcquire()方法让当前线程去尝试获取锁
                 if (p == head && tryAcquire(arg)) {
@@ -1244,14 +1248,14 @@ public abstract class AbstractQueuedSynchronizer
     public final void acquire(int arg) {
         /*
          * acquire()的作用是获取同步状态，这里同步状态的含义等价于锁
-         * tryAcquire()方法时尝试获取同步状态，如果该方法返回true，表示获取同步状态成功；返回false表示获取同步状态失败
+         * tryAcquire()方法是尝试获取同步状态，如果该方法返回true，表示获取同步状态成功；返回false表示获取同步状态失败
          * 第1种情况：当tryAcquire()返回true时，acquire()方法会直接结束。
          *           因为此时!tryAcquire(arg) 就等于false，而&&判断具有短路作用，当因为&&判断前面的条件判断为false，&&后面的判断就不会进行了，所以此时就不会执行后面的if语句，此时方法就直接返回了。
          *           这种情况表示线程获取锁成功了
-         * 第2中情况：当tryAcquire()返回false时，表示线程没有获取到锁，
-         *           这个时候就需要将线程加入到等待队列中了。此时 !tryAcquire() == true，因此会进行&&后面的判断，即acquireQueued()方法的判断，在进行acquireQueued()方法判断之前会先执行addWaiter()方法。
+         * 第2种情况：当tryAcquire()返回false时，表示线程没有获取到锁，
+         *           这个时候就需要将线程加入到同步队列中了。此时 !tryAcquire() == true，因此会进行&&后面的判断，即acquireQueued()方法的判断，在进行acquireQueued()方法判断之前会先执行addWaiter()方法。
          *
-         *           addWaiter()方法返回的是当前线程代表的节点。
+         *           addWaiter()方法返回的是当前线程代表的节点，这个方法的作用是将当前线程放入到同步队列中。
          *           然后再调用acquireQueued()方法，在这个方法中，会先判断当前线程代表的节点是不是第二个节点，如果是就会尝试获取锁，如果获取不到锁，线程就会被阻塞；如果获取到锁，就会返回。
          *           如果当前线程代表的节点不是第二个节点，那么就会直接阻塞，只有当获取到锁后，acquireQueued()方法才会返回
          *
@@ -1262,9 +1266,10 @@ public abstract class AbstractQueuedSynchronizer
          *
          */
 
-        // tryAcquire()方法时AQS中定义的一个方法，它需要同步组件的具体实现类来重写该方法。因此在公平锁的同步组件FairSync和给公平锁的同步组NonfairSync中，tryAcquire()方法的实现代码逻辑是不一样的。
+        // tryAcquire()方法是AQS中定义的一个方法，它需要同步组件的具体实现类来重写该方法。因此在公平锁的同步组件FairSync和非公平锁的同步组NonfairSync中，tryAcquire()方法的实现代码逻辑是不一样的。
         if (!tryAcquire(arg) &&
             acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+            // 调用selfInterrupt()方法重新设置中断标识
             selfInterrupt();
     }
 
@@ -1327,7 +1332,9 @@ public abstract class AbstractQueuedSynchronizer
      */
     public final boolean release(int arg) {
         if (tryRelease(arg)) {
+            // 当释放锁成功以后，需要唤醒同步队列中的其他线程
             Node h = head;
+            // 当waitStatus!=0时，表示同步队列中还有其他线程在等待获取锁
             if (h != null && h.waitStatus != 0)
                 unparkSuccessor(h);
             return true;
