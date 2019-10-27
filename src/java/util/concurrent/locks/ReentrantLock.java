@@ -130,6 +130,8 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             final Thread current = Thread.currentThread();
             int c = getState();
             if (c == 0) {
+                // 与公平锁的不同之处在于，公平在在进行CAS操作之前，会先判断同步队列中是否有人排队。
+                // !hasQueuedPredecessors()
                 if (compareAndSetState(0, acquires)) {
                     setExclusiveOwnerThread(current);
                     return true;

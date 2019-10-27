@@ -393,6 +393,7 @@ public abstract class ByteBuffer
      * @return  The new byte buffer
      */
     public static ByteBuffer wrap(byte[] array) {
+        // 根据数组来创建一个ByteBuffer，当数组中的元素变化时，ByteBuffer中的内容也会变化
         return wrap(array, 0, array.length);
     }
 
