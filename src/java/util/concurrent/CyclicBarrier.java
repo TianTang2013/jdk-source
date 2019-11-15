@@ -176,6 +176,7 @@ public class CyclicBarrier {
      */
     private void nextGeneration() {
         // signal completion of last generation
+        // 唤醒等待队列中所有在等待的线程
         trip.signalAll();
         // set up next generation
         count = parties;
@@ -202,23 +203,27 @@ public class CyclicBarrier {
         lock.lock();
         try {
             final Generation g = generation;
-
+            // 如果有线程调用了await(long timeout,TimeUnit unit)方法，且出现了超时等待，那么此时g.broken就为true，因此会抛出异常
             if (g.broken)
                 throw new BrokenBarrierException();
 
+            // 如果线程被中断，那么就直接中断屏障（让所有等待的线程醒来）
             if (Thread.interrupted()) {
                 breakBarrier();
                 throw new InterruptedException();
             }
-
+            // 计数器递减
             int index = --count;
+            // 如果递减后的结果为0，说明所有线程达到屏障
             if (index == 0) {  // tripped
                 boolean ranAction = false;
                 try {
+                    // 判断有没有需要优先执行的任务，有就执行
                     final Runnable command = barrierCommand;
                     if (command != null)
                         command.run();
                     ranAction = true;
+                    // 在nextGeneration()会唤醒等待队列中的所有线程，边让计数器的count值重置
                     nextGeneration();
                     return 0;
                 } finally {
@@ -228,9 +233,12 @@ public class CyclicBarrier {
             }
 
             // loop until tripped, broken, interrupted, or timed out
+            // 如果计数器没有减到0，就让当前线程进入到等待队列中等待
             for (;;) {
                 try {
+                    // timed是用来标识是否是超时等待
                     if (!timed)
+                        // 调用condition的await()方法，进入到等待队列
                         trip.await();
                     else if (nanos > 0L)
                         nanos = trip.awaitNanos(nanos);

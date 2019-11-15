@@ -367,9 +367,13 @@ public class ReentrantReadWriteLock
          */
 
         protected final boolean tryRelease(int releases) {
+            // 判断是否是当前线程持有锁
             if (!isHeldExclusively())
                 throw new IllegalMonitorStateException();
+            // 将state的值减去releases
             int nextc = getState() - releases;
+            // 调用exclusiveCount()方法，计算写锁的数量。如果写锁的数量为0，表示写锁被完全释放，此时将AQS的exclusiveOwnerThread属性置为null
+            // 并返回free标识，表示写锁是否被完全释放
             boolean free = exclusiveCount(nextc) == 0;
             if (free)
                 setExclusiveOwnerThread(null);
@@ -391,17 +395,41 @@ public class ReentrantReadWriteLock
              */
             Thread current = Thread.currentThread();
             int c = getState();
+            // exclusiveCount()方法的作用是将同步变量与0xFFFF做&运算，计算结果就是写锁的数量。
+            // 因此w的值的含义就是写锁的数量
             int w = exclusiveCount(c);
+            // 如果c不为0就表示锁被占用了，但是占用的是写锁还是读书呢？这个时候就需要根据w的值来判断了。
+            // 如果c等于0就表示此时锁还没有被任何线程占用，那就让线程直接去尝试获取锁
             if (c != 0) {
                 // (Note: if c != 0 and w == 0 then shared count != 0)
+                //
+                /**
+                 * 1. 如果w为0，说明写锁的数量为0，而此时又因为c不等于0，说明锁被占用，但是不是写锁，那么此时锁的状态一定是读锁，
+                 * 既然是读锁状态，那么写锁此时来获取锁时，就肯定失败，因此当w等于0时，tryAcquire()方法返回false。
+                 * 2. 如果w不为0，说明此时锁的状态时写锁，接着进行current != getExclusiveOwnerThread()判断，判断持有锁的线程是否是当前线程
+                 * 如果不是当前线程，那么tryAcquire()返回false；如果是当前线程，那么就进行后面的逻辑。为什么是当前线程持有锁，就还能执行后面的逻辑呢？
+                 * 因为读写锁是支持重入的。
+                 */
                 if (w == 0 || current != getExclusiveOwnerThread())
                     return false;
+                // 下面一行代码是判断，写锁的重入次数或不会超过最大限制，这个最大限制是：2的16次方减1
+                // 为什么是2的16次方减1呢？因为state的低16位存放的是写锁，因此写锁数量的最大值是2的16次方减1
                 if (w + exclusiveCount(acquires) > MAX_COUNT)
                     throw new Error("Maximum lock count exceeded");
                 // Reentrant acquire
                 setState(c + acquires);
                 return true;
             }
+            /**
+             * 1. writerShouldBlock()方法的作用是判断当前线程是否应该阻塞，对于公平的写锁和非公平写锁的具体实现不一样。
+             * 对于非公平写锁而言，直接返回false，因为非公平锁获取锁之前不需要去判断是否排队
+             * 对于公平锁写锁而言，它会判断同步队列中是否有人在排队，有人排队，就返回true，表示当前线程需要阻塞。无人排队就返回false。
+             *
+             * 2. 当writerShouldBlock()返回true时，表示当前线程还不能直接获取锁，因此tryAcquire()方法直接返回false。
+             * 当writerShouldBlock()返回false时，表示当前线程可以尝试去获取锁，因此会执行if判断中后面的逻辑，即通过CAS方法尝试去修改同步变量的值，
+             * 如果修改同步变量成功，则表示当前线程获取到了锁，最终tryAcquire()方法会返回true。如果修改失败，那么tryAcquire()会返回false，表示获取锁失败。
+             *
+             */
             if (writerShouldBlock() ||
                 !compareAndSetState(c, c + acquires))
                 return false;
@@ -431,6 +459,7 @@ public class ReentrantReadWriteLock
             }
             for (;;) {
                 int c = getState();
+                // 将修改同步变量的值（读锁状态减去1<<16）
                 int nextc = c - SHARED_UNIT;
                 if (compareAndSetState(c, nextc))
                     // Releasing the read lock has no effect on readers,
@@ -463,19 +492,32 @@ public class ReentrantReadWriteLock
              */
             Thread current = Thread.currentThread();
             int c = getState();
+            // exclusiveCount(c)返回的是写锁的数量，如果它不为0，说明写锁被占用，如果此时占用写锁的线程不是当前线程，就返回-1，表示获取锁失败
             if (exclusiveCount(c) != 0 &&
                 getExclusiveOwnerThread() != current)
                 return -1;
+            // r表示的是读锁的数量
             int r = sharedCount(c);
+            /**
+             * 在下面的代码中进行了三个判断：
+             * 1、读锁是否应该排队。如果没有人排队，就进行if后面的判断。有人排队，就不会进行if后面的判断，而是最终调用fullTryAcquireShared()方法
+             * 2、读锁数量是否超过最大值。（最大数量为2的16次方-1）
+             * 3、尝试修改同步变量的值
+             */
             if (!readerShouldBlock() &&
                 r < MAX_COUNT &&
                 compareAndSetState(c, c + SHARED_UNIT)) {
+                // 读锁数量为0时，就将当前线程设置为firstReader，firstReaderHoldCount=1
                 if (r == 0) {
                     firstReader = current;
                     firstReaderHoldCount = 1;
                 } else if (firstReader == current) {
+                    // 读锁数量不为0且firstReader(第一次获取读的线程)为当前线程，就将firstReaderHoldCount累加
                     firstReaderHoldCount++;
                 } else {
+                    // 读锁数量不为0，且第一个获取到读锁的线程不是当前线程
+                    // 下面这一段逻辑就是保存当前线程获取读锁的次数，如何保存的呢？
+                    // 通过ThreadLocal来实现的，readHolds就是一个ThreadLocal的实例
                     HoldCounter rh = cachedHoldCounter;
                     if (rh == null || rh.tid != getThreadId(current))
                         cachedHoldCounter = rh = readHolds.get();
@@ -483,8 +525,10 @@ public class ReentrantReadWriteLock
                         readHolds.set(rh);
                     rh.count++;
                 }
+                // 返回1表示获取读锁成功
                 return 1;
             }
+            // 当if中的三个判断均不满足时，就会执行到这儿，调用fullTryAcquireShared()方法尝试获取锁
             return fullTryAcquireShared(current);
         }
 
@@ -500,8 +544,10 @@ public class ReentrantReadWriteLock
              * retries and lazily reading hold counts.
              */
             HoldCounter rh = null;
+            // for死循环，直到满足相应的条件才会return退出，否则一直循环
             for (;;) {
                 int c = getState();
+                // 锁的状态为写锁时，持有锁的线程不等于当期那线程，就说明当前线程获取锁失败，返回-1
                 if (exclusiveCount(c) != 0) {
                     if (getExclusiveOwnerThread() != current)
                         return -1;
@@ -526,6 +572,7 @@ public class ReentrantReadWriteLock
                 }
                 if (sharedCount(c) == MAX_COUNT)
                     throw new Error("Maximum lock count exceeded");
+                // 尝试设置同步变量的值，只要设置成功了，就表示当前线程获取到了锁，然后就设置锁的获取次数等相关信息
                 if (compareAndSetState(c, c + SHARED_UNIT)) {
                     if (sharedCount(c) == 0) {
                         firstReader = current;
@@ -688,6 +735,11 @@ public class ReentrantReadWriteLock
      */
     static final class FairSync extends Sync {
         private static final long serialVersionUID = -2274990926593161451L;
+
+        /**
+         * 判断当前线程是否应该阻塞，返回true表示应该，返回false，表示不应该
+         * @return
+         */
         final boolean writerShouldBlock() {
             return hasQueuedPredecessors();
         }

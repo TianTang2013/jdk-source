@@ -175,11 +175,14 @@ public class CountDownLatch {
 
         protected boolean tryReleaseShared(int releases) {
             // Decrement count; signal when transition to zero
+            // 将同步状态进行减一，减一之后，同步状态变为0，就返回true，表示可以唤醒同步队列中正在等待的线程了
             for (;;) {
                 int c = getState();
+                // 在对state进行减一操作之前，会先判断一下state的值是否为0，如果state已经为0了，此时还有线程来对state进行减1，这个时候是不正常的操作，因此会返回false
                 if (c == 0)
                     return false;
                 int nextc = c-1;
+                // 利用CAS操作来设置state的值
                 if (compareAndSetState(c, nextc))
                     return nextc == 0;
             }

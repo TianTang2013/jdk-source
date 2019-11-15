@@ -176,6 +176,7 @@ public class Semaphore implements java.io.Serializable {
 
         final int nonfairTryAcquireShared(int acquires) {
             for (;;) {
+                // 与公平锁的区别就是，不会判断同步队列中是否有线程在排队
                 int available = getState();
                 int remaining = available - acquires;
                 if (remaining < 0 ||
@@ -186,6 +187,7 @@ public class Semaphore implements java.io.Serializable {
 
         protected final boolean tryReleaseShared(int releases) {
             for (;;) {
+                // 利用CAS操作，将同步变量的值加release
                 int current = getState();
                 int next = current + releases;
                 if (next < current) // overflow
@@ -242,9 +244,16 @@ public class Semaphore implements java.io.Serializable {
 
         protected int tryAcquireShared(int acquires) {
             for (;;) {
+                // 判断同步队列中是否有线程在排队，如果队列中有线程排队，就直接返回-1，表示获取锁失败
                 if (hasQueuedPredecessors())
                     return -1;
+                // 获取当前同步变量的值
                 int available = getState();
+                // 将当前同步变量的值减去即将获取的许可证数量
+                /**
+                 * 如果remaining小于0，就表示当前线程获取锁失败,因为许可证不够了，所以直接返回remaining，此时remaining是一个负数，负数表示获取共享锁失败
+                 * 如果remianing大于等于0，然后将进行CAS操作，修改成功，就表示当前线程获取锁成功，返回remaining，此时remaining是一个非负数。如果修改失败，就进入下一次循环
+                 */
                 int remaining = available - acquires;
                 if (remaining < 0 ||
                     compareAndSetState(available, remaining))

@@ -1247,11 +1247,14 @@ class Thread implements Runnable {
             throw new IllegalArgumentException("timeout value is negative");
         }
 
+        // 当millis为0时，表示不限时长地等待
         if (millis == 0) {
+            // 通过while()死循环，只要线程还活着，那么就等待
             while (isAlive()) {
                 wait(0);
             }
         } else {
+            // 当millis不为0时，就需要进行超时时间的计算，然后让线程等待指定的时间
             while (isAlive()) {
                 long delay = millis - now;
                 if (delay <= 0) {
